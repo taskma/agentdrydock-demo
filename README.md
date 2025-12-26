@@ -14,6 +14,7 @@
 <p align="center">
   <a href="https://www.agentdrydock.com/">Website</a> •
   <a href="#demo">Demo</a> •
+  <a href="#how-it-works">How it Works</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#roadmap">Roadmap</a> •
   <a href="#disclaimer">Disclaimer</a>
@@ -31,22 +32,6 @@
 
 ---
 
-## Table of Contents
-- [What is AgentDrydock?](#what-is-agentdrydock)
-- [Why Execution-First?](#why-execution-first)
-- [Demo](#demo)
-- [How it Works](#how-it-works)
-- [Architecture](#architecture)
-- [Why Containers?](#why-containers)
-- [Use Cases](#use-cases)
-- [Non-goals](#non-goals)
-- [Roadmap](#roadmap)
-- [Collaboration](#collaboration)
-- [Legal](#legal)
-- [Disclaimer](#disclaimer)
-
----
-
 ## What is AgentDrydock?
 
 Many AI coding assistants can propose fixes, but without executing the code they can:
@@ -60,29 +45,18 @@ Many AI coding assistants can propose fixes, but without executing the code they
 
 ---
 
-## Why Execution-First?
-
-AI can “sound right” while being wrong. AgentDrydock forces grounding by using:
-- real compiler output
-- real test output
-- real exit codes
-- real runtime logs
-
-The loop is guided by facts, not assumptions.
-
----
-
 ## Demo
 
 🎥 **Demo video:** https://www.youtube.com/watch?v=2IbIenrjvfg  
 📓 **Walkthrough notes:** `docs/demo-notes.md`  
-✉️ **Contact:** taskma@gmail.com
+✉️ **Contact:** taskma@gmail.com  
+🌐 **Website:** https://www.agentdrydock.com/
 
 <p align="center">
   <img src="assets/workflow.gif" alt="Demo workflow" />
 </p>
 
-Example flow:
+Example loop:
 
 ```bash
 ./run-agent.sh --watch
@@ -94,119 +68,183 @@ Agent: Analyzing compiler output...
 Agent: Generating fix for impl block...
 ✓ Fix applied automatically
 ```
+Goal: faster iteration on repeat failures (often ~2–3×) — varies by codebase and failure type.
 
-> Goal: faster iteration on repeat failures (often ~2–3×) — varies by codebase and failure type.
+How it Works
 
----
+AgentDrydock is designed around a VS Code-driven workflow with a helper container coordinating the agent loop and a project container acting as the disposable execution sandbox.
 
-## How it Works
+VS Code Extension prepares the run
 
-1) **Run in Container**  
-   Execute the project in a disposable Docker container.
+Generates/updates Dockerfile and docker-compose.yml for the current project context.
 
-2) **Observe Real Signals**  
-   Capture `stdout`, `stderr`, exit codes, and test outputs (when applicable).
+Triggers a run when you request “Build & Run” (or watch mode detects changes).
 
-3) **Fix with Agent Loop**  
-   Analyze the failure, patch code/config/deps, then re-run.
+Spawn Helper Container
 
-4) **Verify & Clean Result**  
-   Once passing, discard the container and keep only the verified result.
+A dedicated Developer Helper Container is started.
 
----
+The project workspace is mounted into the helper via a volume for safe, controlled edits.
 
-## Architecture
+Run in Project Container
 
-📌 Full notes: `docs/architecture.md`
+The helper uses the generated compose config to build and run the Project Container (ephemeral sandbox).
 
-### Conceptual components
-- **Runner**: creates & manages disposable containers
-- **Observer**: collects compiler/test/log signals
-- **Snapshot/Diff**: filesystem state before/after attempts
-- **Orchestrator**: decides next action (patch code, change deps, update config)
-- **Verifier**: re-runs build/tests to confirm success
+Observe real signals
 
-### Diagram (Mermaid)
+Collects stdout/stderr, exit codes, and (optionally) test output.
 
-```mermaid
-flowchart LR
-  A[Workspace] --> B[Runner: Docker Container]
-  B --> C[Observer: stdout/stderr/exit codes/tests]
-  C --> D[Agent Orchestrator]
-  D --> E[Patch: code/config/deps]
-  E --> B
-  D --> F[Verifier: rebuild / retest]
-  F --> G{Pass?}
-  G -- yes --> H[Return verified result]
-  G -- no --> D
-```
+Agent loop: patch → re-run → verify
 
-### Multi-model orchestration (optional exploration)
-Parallel agents (Claude / GPT / Gemini etc.) can:
-- propose + review fixes,
-- cross-check edge cases,
-- converge on higher-confidence patches,
-- still **must** pass verification.
+A “Docker Files Creator” agent (when needed) adjusts container configs.
 
----
+A “Build & Run” agent proposes code/config changes.
 
-## Why Containers?
+The helper writes patches back through the mounted volume and re-runs until verified.
+
+Report to VS Code Output
+
+The extension streams progress and final results to VS Code Output.
+
+Architecture
+
+📌 Full notes: docs/architecture.md
+
+Key components (as implemented in the current design)
+
+VS Code Extension (UI/Trigger Layer)
+
+Generates Docker artifacts (Dockerfile + docker-compose)
+
+Spawns the helper container
+
+Streams logs to VS Code Output
+
+Developer Helper Container (Control Plane)
+
+Runs the agent orchestrator (e.g., main.py)
+
+Owns the agent loop and verification logic
+
+Edits the project via a mounted volume
+
+Project Container (Execution Sandbox)
+
+Disposable, isolated runtime to build/run/test the target code
+
+Produces the real failure signals that ground the loop
+
+Conceptual flow
+flowchart TB
+  subgraph VS[Visual Studio Code]
+    EXT[Developer Helper Extension]
+    OUT[VS Code Output]
+  end
+
+  subgraph PROJ[Project Workspace]
+    SRC[Source files]
+    REQ[requirements.txt]
+    DF[Dockerfile]
+    DC[docker-compose.yml]
+  end
+
+  subgraph HELP[Developer Helper Container]
+    ORCH[main.py / orchestrator]
+    AG1[Docker Files Creator Agent]
+    AG2[Build & Run Agent]
+    VOL[(Mounted Volume)]
+  end
+
+  subgraph RUN[Project Container (Sandbox)]
+    EXEC[Build / Run / Tests]
+  end
+
+  EXT -->|create/update| DF
+  EXT -->|create/update| DC
+  EXT -->|spawn| HELP
+
+  PROJ --- VOL
+  VOL --> ORCH
+  ORCH --> AG1
+  ORCH --> AG2
+
+  ORCH -->|docker compose up| RUN
+  RUN -->|stdout/stderr/exit| ORCH
+  ORCH -->|patch files via volume| VOL
+
+  ORCH -->|logs| OUT
+  EXT -->|stream| OUT
+
+Why Containers?
 
 Traditional agents run in your local shell (risky + messy). Containers provide:
 
-- **Isolation** — no host pollution or global config drift  
-- **Reproducibility** — consistent environment per attempt  
-- **Control** — resource limits + deterministic snapshots  
+Isolation — no host pollution or global config drift
 
----
+Reproducibility — consistent environment per attempt
 
-## Use Cases
-- **Missing Dependencies** — install missing system libs / language packages
-- **Config Mismatches** — resolve env var conflicts (local vs CI/CD)
-- **Refactoring Regressions** — fix broken tests after changes
-- **Version Conflicts** — experiment with dependency matrices in isolation
+Control — resource limits + deterministic snapshots
 
----
+Use Cases
 
-## Non-goals
+Missing Dependencies — install missing system libs / language packages
+
+Config Mismatches — resolve env var conflicts (local vs CI/CD)
+
+Refactoring Regressions — fix broken tests after changes
+
+Version Conflicts — experiment with dependency matrices in isolation
+
+Non-goals
+
 To keep this a safe, honest demo artifact:
-- No claims of production readiness, SLA, or paid support
-- No proprietary or customer code
-- No “magic fixes” without verification
-- Demo videos may contain randomly generated code
 
----
+No claims of production readiness, SLA, or paid support
 
-## Roadmap
-- [ ] Richer “signal packs” (test reports, traces, structured logs)
-- [ ] Pluggable stop policy (timeouts, max attempts, confidence)
-- [ ] Deterministic caching while preserving isolation
-- [ ] Reviewer gates (agent proposes → reviewer approves → verify)
-- [ ] Capability sandbox (allowed commands / restricted operations)
+No proprietary or customer code
 
----
+No “magic fixes” without verification
 
-## Collaboration
+Demo videos may contain randomly generated code
+
+Roadmap
+
+ Smarter Docker artifact generation (language/runtime templates)
+
+ Pluggable “run profiles” (build-only, test-only, full pipeline)
+
+ Richer signal packs (test reports, traces, structured logs)
+
+ Reviewer gates (agent proposes → reviewer approves → verify)
+
+ Capability sandbox (allowed commands / restricted operations)
+
+ Deterministic caching while preserving isolation
+
+Collaboration
+
 This is a portfolio/demo artifact exploring a vision for developer tooling.
 
 ✅ Suggestions welcome:
-- architecture reviews
-- nasty failure scenarios to test
-- UX feedback on the workflow
 
-See `CONTRIBUTING.md`.
+architecture reviews
 
----
+nasty failure scenarios to test
 
-## Legal
-- Demo terms: `legal/demo-terms.md`
-- Privacy: `legal/privacy.md`
+UX feedback on the workflow
 
----
+See CONTRIBUTING.md.
 
-## Disclaimer
+Legal
+
+Demo terms: legal/demo-terms.md
+
+Privacy: legal/privacy.md
+
+Disclaimer
+
 AgentDrydock is a personal technical project and portfolio/demo artifact.
-All code runs in isolated containers, but **use at your own risk**.
+All code runs in isolated containers, but use at your own risk.
 No commercial offering. No SLA. No paid support.
 
 © 2025 Agent Drydock. All rights reserved.
