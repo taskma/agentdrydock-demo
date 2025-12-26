@@ -217,7 +217,8 @@ flowchart TB
   style RUN fill:#F7F8FB,stroke:#5B6474,stroke-width:3px,rx:10,ry:10
 
   %% Make ALL lines/arrowheads visible
-  linkStyle default stroke:#0F172A,stroke-width:3px,opacity:1;
+  linkStyle default stroke:#E5E7EB,stroke-width:3px,opacity:1;
+
 
 
 
