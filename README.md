@@ -32,6 +32,25 @@
 
 ---
 
+## Table of Contents
+- [What is AgentDrydock?](#what-is-agentdrydock)
+- [Demo](#demo)
+- [Why Execution-First?](#why-execution-first)
+- [How it Works](#how-it-works)
+- [Architecture](#architecture)
+  - [Conceptual Flow](#conceptual-flow)
+  - [Step-by-Step Conceptual Flow](#step-by-step-conceptual-flow)
+  - [Sequence Diagram](#sequence-diagram)
+- [Why Containers?](#why-containers)
+- [Use Cases](#use-cases)
+- [Non-goals](#non-goals)
+- [Roadmap](#roadmap)
+- [Collaboration](#collaboration)
+- [Legal](#legal)
+- [Disclaimer](#disclaimer)
+
+---
+
 ## What is AgentDrydock?
 
 Many AI coding assistants can propose fixes, but without executing the code they can:
@@ -48,9 +67,8 @@ Many AI coding assistants can propose fixes, but without executing the code they
 ## Demo
 
 🎥 **Demo video:** https://www.youtube.com/watch?v=2IbIenrjvfg  
-📓 **Walkthrough notes:** `docs/demo-notes.md`  
-✉️ **Contact:** taskma@gmail.com  
-🌐 **Website:** https://www.agentdrydock.com/
+🌐 **Website:** https://www.agentdrydock.com/  
+✉️ **Contact:** taskma@gmail.com
 
 <p align="center">
   <img src="assets/workflow.gif" alt="Demo workflow" />
@@ -73,6 +91,18 @@ Agent: Generating fix for impl block...
 
 ---
 
+## Why Execution-First?
+
+AI can “sound right” while being wrong. AgentDrydock forces grounding by using:
+- real compiler output
+- real test output
+- real exit codes
+- real runtime logs
+
+The loop is guided by facts, not assumptions.
+
+---
+
 ## How it Works
 
 AgentDrydock is designed around a **VS Code-driven workflow** with a **helper container** coordinating the agent loop and a **project container** acting as the disposable execution sandbox.
@@ -85,15 +115,15 @@ AgentDrydock is designed around a **VS Code-driven workflow** with a **helper co
    - A dedicated **Developer Helper Container** is started.
    - The project workspace is mounted into the helper via a **volume** for safe, controlled edits.
 
-3) **Run in Project Container**
-   - The helper uses the generated compose config to build and run the **Project Container** (ephemeral sandbox).
+3) **Run in Project Container (Sandbox)**
+   - The helper uses the generated compose config to build and run the **Project Container**.
 
 4) **Observe real signals**
    - Collects **stdout/stderr**, exit codes, and (optionally) test output.
 
 5) **Agent loop: patch → re-run → verify**
    - A “Docker Files Creator” agent (when needed) adjusts container configs.
-   - A “Build & Run” agent proposes code/config changes.
+   - A “Build & Run” agent proposes code/config changes based on real failures.
    - The helper writes patches back through the mounted volume and re-runs until verified.
 
 6) **Report to VS Code Output**
@@ -103,64 +133,179 @@ AgentDrydock is designed around a **VS Code-driven workflow** with a **helper co
 
 ## Architecture
 
-📌 Full notes: `docs/architecture.md`
+This section includes diagrams that render on GitHub using Mermaid code blocks.
 
-### Key components (as implemented in the current design)
-- **VS Code Extension (UI/Trigger Layer)**
-  - Generates Docker artifacts (Dockerfile + docker-compose)
-  - Spawns the helper container
-  - Streams logs to VS Code Output
+### Conceptual Flow
 
-- **Developer Helper Container (Control Plane)**
-  - Runs the agent orchestrator (e.g., `main.py`)
-  - Owns the agent loop and verification logic
-  - Edits the project via a mounted volume
-
-- **Project Container (Execution Sandbox)**
-  - Disposable, isolated runtime to build/run/test the target code
-  - Produces the real failure signals that ground the loop
-
-### Conceptual flow
 ```mermaid
 flowchart TB
-  subgraph VS[Visual Studio Code]
-    EXT[Developer Helper Extension]
-    OUT[VS Code Output]
+  %% --- VS Code side ---
+  subgraph VS["Visual Studio Code"]
+    EXT["Developer Helper Extension"]
+    OUT["VS Code Output"]
   end
 
-  subgraph PROJ[Project Workspace]
-    SRC[Source files]
-    REQ[requirements.txt]
-    DF[Dockerfile]
-    DC[docker-compose.yml]
+  %% --- Project workspace ---
+  subgraph PROJ["Project Workspace (host)"]
+    SRC["Source files (e.g., main.py / src/*)"]
+    REQ["Dependency manifest (requirements.txt / package.json / etc.)"]
+    DF["Dockerfile (generated/updated)"]
+    DC["docker-compose.yml (generated/updated)"]
   end
 
-  subgraph HELP[Developer Helper Container]
-    ORCH[main.py / orchestrator]
-    AG1[Docker Files Creator Agent]
-    AG2[Build & Run Agent]
-    VOL[(Mounted Volume)]
+  %% --- Helper control plane ---
+  subgraph HELP["Developer Helper Container (control plane)"]
+    ORCH["main.py (Orchestrator)"]
+    AG_DOCKER["Docker Files Creator Agent"]
+    AG_BUILD["Build & Run Agent"]
+    VOL[("Mounted Volume (workspace mount)")]
   end
 
-  subgraph RUN[Project Container (Sandbox)]
-    EXEC[Build / Run / Tests]
+  %% --- Execution sandbox ---
+  subgraph RUN["Project Container (sandbox)"]
+    RUNNER["Build / Run / Tests"]
   end
 
-  EXT -->|create/update| DF
-  EXT -->|create/update| DC
-  EXT -->|spawn| HELP
+  %% --- Flows ---
+  EXT -->|"create/update"| DF
+  EXT -->|"create/update"| DC
 
-  PROJ --- VOL
+  %% mount workspace into helper
+  SRC --- VOL
+  REQ --- VOL
+  DF --- VOL
+  DC --- VOL
+
+  %% spawn helper + start orchestration
+  EXT -->|"spawn helper container"| ORCH
   VOL --> ORCH
-  ORCH --> AG1
-  ORCH --> AG2
 
-  ORCH -->|docker compose up| RUN
-  RUN -->|stdout/stderr/exit| ORCH
-  ORCH -->|patch files via volume| VOL
+  %% agents
+  ORCH --> AG_DOCKER
+  ORCH --> AG_BUILD
 
-  ORCH -->|logs| OUT
-  EXT -->|stream| OUT
+  %% execute in sandbox
+  ORCH -->|"docker compose build/up"| RUNNER
+  RUNNER -->|"stdout/stderr/exit + test results"| ORCH
+
+  %% apply fixes back to workspace via volume
+  ORCH -->|"patch code/config/deps via volume"| VOL
+
+  %% report to VS Code
+  ORCH -->|"progress + final status"| OUT
+```
+
+### Step-by-Step Conceptual Flow
+
+```mermaid
+flowchart TB
+  %% =========================
+  %% VS Code side
+  %% =========================
+  subgraph VS["Visual Studio Code"]
+    EXT["Developer Helper Extension"]
+    OUT["VS Code Output"]
+  end
+
+  %% =========================
+  %% Project workspace
+  %% =========================
+  subgraph PROJ["Project Workspace (host)"]
+    SRC["Source files (e.g., main.py / src/*)"]
+    REQ["Dependency manifest (requirements.txt / package.json / etc.)"]
+    DF["Dockerfile (generated/updated)"]
+    DC["docker-compose.yml (generated/updated)"]
+  end
+
+  %% =========================
+  %% Helper control plane
+  %% =========================
+  subgraph HELP["Developer Helper Container (control plane)"]
+    ORCH["main.py (Orchestrator)"]
+    AG_DOCKER["Docker Files Creator Agent"]
+    AG_BUILD["Build & Run Agent"]
+    VOL[("Mounted Volume (workspace mount)")]
+  end
+
+  %% =========================
+  %% Execution sandbox
+  %% =========================
+  subgraph RUN["Project Container (sandbox)"]
+    RUNNER["Build / Run / Tests"]
+  end
+
+  %% --- (1.x) Preparation & artifact generation ---
+  EXT -->|"(1.1) Detect project context"| SRC
+  EXT -->|"(1.2) Read deps manifest"| REQ
+  EXT -->|"(1.3) Create/Update Dockerfile"| DF
+  EXT -->|"(1.4) Create/Update docker-compose.yml"| DC
+
+  %% --- (1.5) Spawn helper + mount workspace ---
+  EXT -->|"(1.5) Spawn helper container"| ORCH
+  SRC ---|"(1.6) Mount workspace"| VOL
+  REQ ---|"(1.6) Mount workspace"| VOL
+  DF  ---|"(1.6) Mount workspace"| VOL
+  DC  ---|"(1.6) Mount workspace"| VOL
+  VOL -->|"(1.7) Provide editable workspace view"| ORCH
+
+  %% --- (2.x) Agent loop: run -> observe -> patch -> verify ---
+  ORCH -->|"(2.1) Delegate: ensure Docker artifacts OK"| AG_DOCKER
+  AG_DOCKER -->|"(2.2) (If needed) refine Dockerfile/compose"| VOL
+
+  ORCH -->|"(2.3) Delegate: attempt build/run"| AG_BUILD
+  AG_BUILD -->|"(2.4) docker compose build/up"| RUNNER
+  RUNNER -->|"(2.5) stdout/stderr/exit + tests"| ORCH
+
+  ORCH -->|"(2.6) Create patch from real signals"| AG_BUILD
+  AG_BUILD -->|"(2.7) Apply patch via volume"| VOL
+
+  ORCH -->|"(2.8) Re-run until verified or stop policy"| RUNNER
+
+  %% --- Reporting ---
+  ORCH -->|"(3.1) Stream progress + final result"| OUT
+  EXT -->|"(3.2) Surface logs in VS Code"| OUT
+```
+
+### Sequence Diagram
+
+> This diagram shows the same flow with a time-ordered view (who calls whom, and when).
+
+```mermaid
+sequenceDiagram
+  autonumber
+
+  participant U as Developer
+  participant EXT as VS Code Extension
+  participant WS as Project Workspace (Host)
+  participant VOL as Mounted Volume
+  participant ORCH as Helper Container (Orchestrator)
+  participant AGD as Docker Files Creator Agent
+  participant AGB as Build & Run Agent
+  participant RUN as Project Container (Sandbox)
+  participant OUT as VS Code Output
+
+  U->>EXT: Trigger Build/Run (or watch detects change)
+  EXT->>WS: Read context (source + deps)
+  EXT->>WS: Generate/Update Dockerfile
+  EXT->>WS: Generate/Update docker-compose.yml
+
+  EXT->>ORCH: Spawn helper container
+  WS-->>VOL: Mount workspace into helper (volume)
+  VOL-->>ORCH: Provide editable view of workspace
+
+  ORCH->>AGD: Validate/adjust Dockerfile/compose (if needed)
+  AGD->>VOL: Update artifacts (optional)
+
+  loop Agent loop (until verified / stop policy)
+    ORCH->>AGB: Attempt build/run
+    AGB->>RUN: docker compose build/up
+    RUN-->>ORCH: stdout/stderr/exit + test results
+    ORCH->>AGB: Decide patch using real signals
+    AGB->>VOL: Apply patch to workspace
+  end
+
+  ORCH-->>OUT: Stream progress + final result
+  EXT-->>OUT: Surface logs in VS Code
 ```
 
 ---
@@ -209,7 +354,7 @@ This is a portfolio/demo artifact exploring a vision for developer tooling.
 - nasty failure scenarios to test
 - UX feedback on the workflow
 
-See `CONTRIBUTING.md`.
+Contact: taskma@gmail.com
 
 ---
 
