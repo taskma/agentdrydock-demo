@@ -68,73 +68,60 @@ Agent: Analyzing compiler output...
 Agent: Generating fix for impl block...
 ✓ Fix applied automatically
 ```
-Goal: faster iteration on repeat failures (often ~2–3×) — varies by codebase and failure type.
 
-How it Works
+> Goal: faster iteration on repeat failures (often ~2–3×) — varies by codebase and failure type.
 
-AgentDrydock is designed around a VS Code-driven workflow with a helper container coordinating the agent loop and a project container acting as the disposable execution sandbox.
+---
 
-VS Code Extension prepares the run
+## How it Works
 
-Generates/updates Dockerfile and docker-compose.yml for the current project context.
+AgentDrydock is designed around a **VS Code-driven workflow** with a **helper container** coordinating the agent loop and a **project container** acting as the disposable execution sandbox.
 
-Triggers a run when you request “Build & Run” (or watch mode detects changes).
+1) **VS Code Extension prepares the run**
+   - Generates/updates **Dockerfile** and **docker-compose.yml** for the current project context.
+   - Triggers a run when you request “Build & Run” (or watch mode detects changes).
 
-Spawn Helper Container
+2) **Spawn Helper Container**
+   - A dedicated **Developer Helper Container** is started.
+   - The project workspace is mounted into the helper via a **volume** for safe, controlled edits.
 
-A dedicated Developer Helper Container is started.
+3) **Run in Project Container**
+   - The helper uses the generated compose config to build and run the **Project Container** (ephemeral sandbox).
 
-The project workspace is mounted into the helper via a volume for safe, controlled edits.
+4) **Observe real signals**
+   - Collects **stdout/stderr**, exit codes, and (optionally) test output.
 
-Run in Project Container
+5) **Agent loop: patch → re-run → verify**
+   - A “Docker Files Creator” agent (when needed) adjusts container configs.
+   - A “Build & Run” agent proposes code/config changes.
+   - The helper writes patches back through the mounted volume and re-runs until verified.
 
-The helper uses the generated compose config to build and run the Project Container (ephemeral sandbox).
+6) **Report to VS Code Output**
+   - The extension streams progress and final results to **VS Code Output**.
 
-Observe real signals
+---
 
-Collects stdout/stderr, exit codes, and (optionally) test output.
+## Architecture
 
-Agent loop: patch → re-run → verify
+📌 Full notes: `docs/architecture.md`
 
-A “Docker Files Creator” agent (when needed) adjusts container configs.
+### Key components (as implemented in the current design)
+- **VS Code Extension (UI/Trigger Layer)**
+  - Generates Docker artifacts (Dockerfile + docker-compose)
+  - Spawns the helper container
+  - Streams logs to VS Code Output
 
-A “Build & Run” agent proposes code/config changes.
+- **Developer Helper Container (Control Plane)**
+  - Runs the agent orchestrator (e.g., `main.py`)
+  - Owns the agent loop and verification logic
+  - Edits the project via a mounted volume
 
-The helper writes patches back through the mounted volume and re-runs until verified.
+- **Project Container (Execution Sandbox)**
+  - Disposable, isolated runtime to build/run/test the target code
+  - Produces the real failure signals that ground the loop
 
-Report to VS Code Output
-
-The extension streams progress and final results to VS Code Output.
-
-Architecture
-
-📌 Full notes: docs/architecture.md
-
-Key components (as implemented in the current design)
-
-VS Code Extension (UI/Trigger Layer)
-
-Generates Docker artifacts (Dockerfile + docker-compose)
-
-Spawns the helper container
-
-Streams logs to VS Code Output
-
-Developer Helper Container (Control Plane)
-
-Runs the agent orchestrator (e.g., main.py)
-
-Owns the agent loop and verification logic
-
-Edits the project via a mounted volume
-
-Project Container (Execution Sandbox)
-
-Disposable, isolated runtime to build/run/test the target code
-
-Produces the real failure signals that ground the loop
-
-Conceptual flow
+### Conceptual flow
+```mermaid
 flowchart TB
   subgraph VS[Visual Studio Code]
     EXT[Developer Helper Extension]
@@ -174,77 +161,67 @@ flowchart TB
 
   ORCH -->|logs| OUT
   EXT -->|stream| OUT
+```
 
-Why Containers?
+---
+
+## Why Containers?
 
 Traditional agents run in your local shell (risky + messy). Containers provide:
+- **Isolation** — no host pollution or global config drift
+- **Reproducibility** — consistent environment per attempt
+- **Control** — resource limits + deterministic snapshots
 
-Isolation — no host pollution or global config drift
+---
 
-Reproducibility — consistent environment per attempt
+## Use Cases
+- **Missing Dependencies** — install missing system libs / language packages
+- **Config Mismatches** — resolve env var conflicts (local vs CI/CD)
+- **Refactoring Regressions** — fix broken tests after changes
+- **Version Conflicts** — experiment with dependency matrices in isolation
 
-Control — resource limits + deterministic snapshots
+---
 
-Use Cases
-
-Missing Dependencies — install missing system libs / language packages
-
-Config Mismatches — resolve env var conflicts (local vs CI/CD)
-
-Refactoring Regressions — fix broken tests after changes
-
-Version Conflicts — experiment with dependency matrices in isolation
-
-Non-goals
-
+## Non-goals
 To keep this a safe, honest demo artifact:
+- No claims of production readiness, SLA, or paid support
+- No proprietary or customer code
+- No “magic fixes” without verification
+- Demo videos may contain randomly generated code
 
-No claims of production readiness, SLA, or paid support
+---
 
-No proprietary or customer code
+## Roadmap
+- [ ] Smarter Docker artifact generation (language/runtime templates)
+- [ ] Pluggable “run profiles” (build-only, test-only, full pipeline)
+- [ ] Richer signal packs (test reports, traces, structured logs)
+- [ ] Reviewer gates (agent proposes → reviewer approves → verify)
+- [ ] Capability sandbox (allowed commands / restricted operations)
+- [ ] Deterministic caching while preserving isolation
 
-No “magic fixes” without verification
+---
 
-Demo videos may contain randomly generated code
-
-Roadmap
-
- Smarter Docker artifact generation (language/runtime templates)
-
- Pluggable “run profiles” (build-only, test-only, full pipeline)
-
- Richer signal packs (test reports, traces, structured logs)
-
- Reviewer gates (agent proposes → reviewer approves → verify)
-
- Capability sandbox (allowed commands / restricted operations)
-
- Deterministic caching while preserving isolation
-
-Collaboration
-
+## Collaboration
 This is a portfolio/demo artifact exploring a vision for developer tooling.
 
 ✅ Suggestions welcome:
+- architecture reviews
+- nasty failure scenarios to test
+- UX feedback on the workflow
 
-architecture reviews
+See `CONTRIBUTING.md`.
 
-nasty failure scenarios to test
+---
 
-UX feedback on the workflow
+## Legal
+- Demo terms: `legal/demo-terms.md`
+- Privacy: `legal/privacy.md`
 
-See CONTRIBUTING.md.
+---
 
-Legal
-
-Demo terms: legal/demo-terms.md
-
-Privacy: legal/privacy.md
-
-Disclaimer
-
+## Disclaimer
 AgentDrydock is a personal technical project and portfolio/demo artifact.
-All code runs in isolated containers, but use at your own risk.
+All code runs in isolated containers, but **use at your own risk**.
 No commercial offering. No SLA. No paid support.
 
 © 2025 Agent Drydock. All rights reserved.
