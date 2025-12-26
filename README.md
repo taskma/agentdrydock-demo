@@ -319,6 +319,9 @@ flowchart TB
     "mainBkg":"#FFFFFF",
     "lineColor":"#16A34A",
     "signalColor":"#16A34A",
+    "textColor":"#16A34A",
+    "labelTextColor":"#16A34A",
+    "actorTextColor":"#0F172A",
     "fontFamily":"ui-sans-serif, system-ui"
   }
 }}%%
