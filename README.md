@@ -314,86 +314,50 @@ flowchart TB
 ```mermaid
 %%{init: {
   "theme":"base",
-  "flowchart":{"curve":"linear"},
   "themeVariables":{
     "background":"#FFFFFF",
     "mainBkg":"#FFFFFF",
     "lineColor":"#16A34A",
-    "edgeLabelBackground":"#FFFFFF",
+    "signalColor":"#16A34A",
     "fontFamily":"ui-sans-serif, system-ui"
   }
 }}%%
-flowchart TB
-  subgraph VS["Visual Studio Code"]
-    EXT["Developer Helper Extension"]
-    OUT["VS Code Output"]
+sequenceDiagram
+  autonumber
+
+  participant U as Developer
+  participant EXT as VS Code Extension
+  participant WS as Project Workspace (Host)
+  participant VOL as Mounted Volume
+  participant ORCH as Helper Container (Orchestrator)
+  participant AGD as Docker Files Creator Agent
+  participant AGB as Build & Run Agent
+  participant RUN as Project Container (Sandbox)
+  participant OUT as VS Code Output
+
+  U->>EXT: Trigger Build/Run (or watch detects change)
+  EXT->>WS: Read context (source + deps)
+  EXT->>WS: Generate/Update Dockerfile
+  EXT->>WS: Generate/Update docker-compose.yml
+
+  EXT->>ORCH: Spawn helper container
+  WS-->>VOL: Mount workspace into helper (volume)
+  VOL-->>ORCH: Provide editable view of workspace
+
+  ORCH->>AGD: Validate/adjust Dockerfile/compose (if needed)
+  AGD->>VOL: Update artifacts (optional)
+
+  loop Agent loop (until verified / stop policy)
+    ORCH->>AGB: Attempt build/run
+    AGB->>RUN: docker compose build/up
+    RUN-->>ORCH: stdout/stderr/exit + test results
+    ORCH->>AGB: Decide patch using real signals
+    AGB->>VOL: Apply patch to workspace
   end
 
-  subgraph PROJ["Project Workspace (host)"]
-    SRC["Source files (e.g., main.py / src/*)"]
-    REQ["Dependency manifest (requirements.txt / package.json / etc.)"]
-    DF["Dockerfile (generated/updated)"]
-    DC["docker-compose.yml (generated/updated)"]
-  end
+  ORCH-->>OUT: Stream progress + final result
+  EXT-->>OUT: Surface logs in VS Code
 
-  subgraph HELP["Developer Helper Container (control plane)"]
-    ORCH["main.py (Orchestrator)"]
-    AG_DOCKER["Docker Files Creator Agent"]
-    AG_BUILD["Build & Run Agent"]
-    VOL[("Mounted Volume (workspace mount)")]
-  end
-
-  subgraph RUN["Project Container (sandbox)"]
-    RUNNER["Build / Run / Tests"]
-  end
-
-  EXT -->|"(1.1) Detect project context"| SRC
-  EXT -->|"(1.2) Read deps manifest"| REQ
-  EXT -->|"(1.3) Create/Update Dockerfile"| DF
-  EXT -->|"(1.4) Create/Update docker-compose.yml"| DC
-
-  EXT -->|"(1.5) Spawn helper container"| ORCH
-  SRC ---|"(1.6) Mount workspace"| VOL
-  REQ ---|"(1.6) Mount workspace"| VOL
-  DF  ---|"(1.6) Mount workspace"| VOL
-  DC  ---|"(1.6) Mount workspace"| VOL
-  VOL -->|"(1.7) Provide editable workspace view"| ORCH
-
-  ORCH -->|"(2.1) Delegate: ensure Docker artifacts OK"| AG_DOCKER
-  AG_DOCKER -->|"(2.2) (If needed) refine Dockerfile/compose"| VOL
-
-  ORCH -->|"(2.3) Delegate: attempt build/run"| AG_BUILD
-  AG_BUILD -->|"(2.4) docker compose build/up"| RUNNER
-  RUNNER -->|"(2.5) stdout/stderr/exit + tests"| ORCH
-
-  ORCH -->|"(2.6) Create patch from real signals"| AG_BUILD
-  AG_BUILD -->|"(2.7) Apply patch via volume"| VOL
-
-  ORCH -->|"(2.8) Re-run until verified or stop policy"| RUNNER
-
-  ORCH -->|"(3.1) Stream progress + final result"| OUT
-  EXT -->|"(3.2) Surface logs in VS Code"| OUT
-
-  %% Styling (boxes & areas)
-  classDef vscode fill:#E8F0FF,stroke:#2B5FD9,stroke-width:2px,color:#0B1B3A;
-  classDef workspace fill:#E9FAF2,stroke:#1C8E5A,stroke-width:2px,color:#06301E;
-  classDef helper fill:#FFF2E5,stroke:#C46A00,stroke-width:2px,color:#3A1F00;
-  classDef sandbox fill:#F2F3F7,stroke:#5B6474,stroke-width:2px,color:#141922;
-  classDef output fill:#F6E9FF,stroke:#7B2CBF,stroke-width:2px,color:#2A0A3A;
-
-  class EXT vscode;
-  class OUT output;
-  class SRC,REQ,DF,DC workspace;
-  class ORCH,AG_DOCKER,AG_BUILD,VOL helper;
-  class RUNNER sandbox;
-
-  style VS fill:#F3F7FF,stroke:#2B5FD9,stroke-width:3px,rx:10,ry:10
-  style PROJ fill:#F2FFF8,stroke:#1C8E5A,stroke-width:3px,rx:10,ry:10
-  style HELP fill:#FFF8EE,stroke:#C46A00,stroke-width:3px,rx:10,ry:10
-  style RUN fill:#F7F8FB,stroke:#5B6474,stroke-width:3px,rx:10,ry:10
-
-  %% All lines/arrowheads in green
-  linkStyle default stroke:#16A34A,stroke-width:3px,opacity:1;
 
 ```
 
