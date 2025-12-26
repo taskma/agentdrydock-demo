@@ -144,19 +144,17 @@ This section includes diagrams that render on GitHub using Mermaid code blocks.
   "themeVariables":{
     "background":"#FFFFFF",
     "mainBkg":"#FFFFFF",
-    "lineColor":"#0F172A",
+    "lineColor":"#16A34A",
     "edgeLabelBackground":"#FFFFFF",
     "fontFamily":"ui-sans-serif, system-ui"
   }
 }}%%
 flowchart TB
-  %% --- VS Code side ---
   subgraph VS["Visual Studio Code"]
     EXT["Developer Helper Extension"]
     OUT["VS Code Output"]
   end
 
-  %% --- Project workspace ---
   subgraph PROJ["Project Workspace (host)"]
     SRC["Source files (e.g., main.py / src/*)"]
     REQ["Dependency manifest (requirements.txt / package.json / etc.)"]
@@ -164,7 +162,6 @@ flowchart TB
     DC["docker-compose.yml (generated/updated)"]
   end
 
-  %% --- Helper control plane ---
   subgraph HELP["Developer Helper Container (control plane)"]
     ORCH["main.py (Orchestrator)"]
     AG_DOCKER["Docker Files Creator Agent"]
@@ -172,12 +169,10 @@ flowchart TB
     VOL[("Mounted Volume (workspace mount)")]
   end
 
-  %% --- Execution sandbox ---
   subgraph RUN["Project Container (sandbox)"]
     RUNNER["Build / Run / Tests"]
   end
 
-  %% --- Flows ---
   EXT -->|"create/update"| DF
   EXT -->|"create/update"| DC
 
@@ -198,7 +193,6 @@ flowchart TB
   ORCH -->|"patch code/config/deps via volume"| VOL
   ORCH -->|"progress + final status"| OUT
 
-  %% Styling (boxes & areas)
   classDef vscode fill:#E8F0FF,stroke:#2B5FD9,stroke-width:2px,color:#0B1B3A;
   classDef workspace fill:#E9FAF2,stroke:#1C8E5A,stroke-width:2px,color:#06301E;
   classDef helper fill:#FFF2E5,stroke:#C46A00,stroke-width:2px,color:#3A1F00;
@@ -216,8 +210,9 @@ flowchart TB
   style HELP fill:#FFF8EE,stroke:#C46A00,stroke-width:3px,rx:10,ry:10
   style RUN fill:#F7F8FB,stroke:#5B6474,stroke-width:3px,rx:10,ry:10
 
-  %% Make ALL lines/arrowheads visible
-  linkStyle default stroke:#E5E7EB,stroke-width:3px,opacity:1;
+  %% All lines/arrowheads in green
+  linkStyle default stroke:#16A34A,stroke-width:3px,opacity:1;
+
 
 
 
