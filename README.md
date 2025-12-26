@@ -212,6 +212,9 @@ flowchart TB
   style HELP fill:#FFF8EE,stroke:#C46A00,stroke-width:2px,rx:10,ry:10
   style RUN fill:#F7F8FB,stroke:#5B6474,stroke-width:2px,rx:10,ry:10
 
+  %% ok/çizgi görünürlüğünü artır
+  linkStyle default stroke:#111827,stroke-width:2px,opacity:1;
+
 ```
 
 ### Step-by-Step Conceptual Flow
